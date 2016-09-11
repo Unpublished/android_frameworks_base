@@ -251,6 +251,9 @@ public class MediaRecorder
          */
         public static final int REMOTE_SUBMIX = 8;
 
+        private static final int HTC_START = 8;
+
+
         /**
          * Audio source for capturing broadcast radio tuner output.
          * @hide
@@ -312,10 +315,16 @@ public class MediaRecorder
        */
         private OutputFormat() {}
         public static final int DEFAULT = 0;
+
+        private static final int HTC_START = 9;
+
         /** 3GPP media file format*/
         public static final int THREE_GPP = 1;
         /** MPEG4 media file format*/
         public static final int MPEG_4 = 2;
+
+        public static final int MPEG_4_PAUSEABLE = 10;
+
 
         /** The following formats are audio only .aac or .amr formats */
 
@@ -337,6 +346,9 @@ public class MediaRecorder
         /** AAC ADTS file format */
         public static final int AAC_ADTS = 6;
 
+        public static final int OUTPUT_FORMAT_HTCRTP_AVP = 11;
+
+
         /** @hide Stream over a socket, limited to a single stream */
         public static final int OUTPUT_FORMAT_RTP_AVP = 7;
 
@@ -351,6 +363,9 @@ public class MediaRecorder
 
         /** @hide WAVE media file format*/
         public static final int WAVE = 21;
+
+        public static final int ZOE_STORY = 13;
+
 
     };
 
@@ -376,6 +391,7 @@ public class MediaRecorder
         public static final int AAC_ELD = 5;
         /** Ogg Vorbis audio codec */
         public static final int VORBIS = 6;
+        private static final int HTC_START = 6;
         /** @hide EVRC audio codec */
         public static final int EVRC = 10;
         /** @hide QCELP audio codec */

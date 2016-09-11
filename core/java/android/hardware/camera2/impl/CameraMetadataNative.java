@@ -1105,6 +1105,10 @@ public class CameraMetadataNative implements Parcelable {
         return nativeGetEntryCount();
     }
 
+    public long getNativeCameraMetadata() {
+        return this.mMetadataPtr;
+    }
+
     /**
      * Does this metadata contain at least 1 entry?
      *

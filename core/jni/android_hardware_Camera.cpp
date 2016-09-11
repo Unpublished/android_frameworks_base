@@ -1080,7 +1080,7 @@ static void android_hardware_Camera_sendVendorCommand(JNIEnv *env, jobject thiz,
 //-------------------------------------------------
 
 static JNINativeMethod camMethods[] = {
-  { "getNumberOfCameras",
+  { "_getNumberOfCameras",
     "()I",
     (void *)android_hardware_Camera_getNumberOfCameras },
   { "_getCameraInfo",
@@ -1101,7 +1101,7 @@ static JNINativeMethod camMethods[] = {
   { "setPreviewCallbackSurface",
     "(Landroid/view/Surface;)V",
     (void *)android_hardware_Camera_setPreviewCallbackSurface },
-  { "startPreview",
+  { "_startPreview",
     "()V",
     (void *)android_hardware_Camera_startPreview },
   { "_stopPreview",

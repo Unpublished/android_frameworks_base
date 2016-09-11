@@ -19,23 +19,34 @@ package android.hardware;
 import android.app.ActivityThread;
 import android.annotation.SdkConstant;
 import android.annotation.SdkConstant.SdkConstantType;
+import android.app.AppGlobals;
+import android.app.Application;
 import android.content.Context;
+import android.content.Intent;
 import android.graphics.ImageFormat;
 import android.graphics.Point;
 import android.graphics.Rect;
 import android.graphics.SurfaceTexture;
+import android.hardware.camera2.CameraCharacteristics;
+import android.hardware.camera2.CaptureRequest.Builder;
+import android.hardware.camera2.CaptureResult;
+import android.hardware.camera2.impl.CameraMetadataNative;
+import android.hardware.camera2.impl.CaptureResultExtras;
 import android.media.IAudioService;
+import android.net.wifi.WifiEnterpriseConfig;
 import android.os.Handler;
 import android.os.IBinder;
 import android.os.Looper;
 import android.os.Message;
 import android.os.RemoteException;
 import android.os.ServiceManager;
+import android.os.SystemClock;
 import android.renderscript.Allocation;
 import android.renderscript.Element;
 import android.renderscript.RenderScript;
 import android.renderscript.RSIllegalArgumentException;
 import android.renderscript.Type;
+import android.util.DisplayMetrics;
 import android.util.Log;
 import android.text.TextUtils;
 import android.view.Surface;
@@ -158,6 +169,10 @@ public class Camera {
     private static final int CAMERA_MSG_STATS_DATA       = 0x1000;
     private static final int CAMERA_MSG_META_DATA        = 0x2000;
     /* ### QC ADD-ONS: END */
+    /* ### HTC ADD-ONS: START */
+    private static final int CAMERA_MSG_OT_METADATA     = 0x4000;
+    private static final int CAMERA_MSG_HTC_CALLBACK    = 0x8000;
+    /* ### HTC ADD-ONS: END */
 
     private long mNativeContext; // accessed by native methods
     private EventHandler mEventHandler;
@@ -189,6 +204,42 @@ public class Camera {
     private CameraDataCallback mCameraDataCallback;
     private CameraMetaDataCallback mCameraMetaDataCallback;
     /* ### QC ADD-ONS: END */
+    /* ### HTC ADD-ONS: START */
+    private static final String DTAG = "Camera2Mode";
+    private static final int MASK_HTC_CALLBACK = 32767;
+
+    private static final int HTC_CALLBACK_CAPTURE_RESULT = 13;
+
+    private static boolean hasIspFrontCam = false;
+    private static boolean hasSubCam = false;
+    private static int sIndexOfFront;
+    private static int sIndexOfIspFront;
+    private static int sIndexOfMain;
+    private static int sIndexOfSub;
+    private static boolean sIsFront = false;
+    private static boolean sIsMain = false;
+    private static Camera sMainCam;
+    private static Looper sMainLooper;
+    private static Camera sSubCam;
+    private static Parameters sSubCamParam;
+    private int mCameraId;
+    private boolean mEnableSubPreview = true;
+    private byte[] mConcateJpg;
+    private CameraMetadataNative mMetadata;
+    private long mMetadataPtr;
+    private HtcCallback mHtcCallback;
+    private Object mHtcHDKCallback;
+    private boolean mIsMainCamPreviewing = false;
+    private boolean mIsReleased = false;
+    private boolean mIsSubCamChecked = false;
+    private boolean mIsSubCamPreviewing = false;
+    private boolean mIsSubCamTakePic = false;
+    private byte[] mJpg;
+    private OtDetectionListener mOtListener;
+    private Parameters mParamsForSubFirstPreview;
+    private boolean mVteEnable = false;
+    private boolean sIsEnableSubCam = true;
+    /* ### HTC ADD-ONS: END */
 
     /**
      * Broadcast Action:  A new picture is taken by the camera, and the entry of
@@ -235,7 +286,39 @@ public class Camera {
     /**
      * Returns the number of physical cameras available on this device.
      */
-    public native static int getNumberOfCameras();
+    public native static int _getNumberOfCameras();
+
+    private static int checkIspCamera(int i) {
+        if (i == sIndexOfFront && sIsMain && hasIspFrontCam) {
+            i = sIndexOfIspFront;
+            sIndexOfFront = sIndexOfIspFront;
+        }
+        return (i != sIndexOfFront || hasIspFrontCam) ? i : i;
+    }
+
+    private boolean enableDepthMode() {
+        boolean z = true;
+        if (sMainCam == null) {
+            return false;
+        }
+        Camera camera = sMainCam;
+        if (!hasSubCam || !sMainCam.mIsSubCamPreviewing) {
+            return false;
+        }
+        int i = 0;
+        String str = sMainCam.getParameters().get("enable_depth");
+        if (!TextUtils.isEmpty(str)) {
+            i = Integer.parseInt(str);
+        }
+        if (i != 1) {
+            z = false;
+        }
+        return z;
+    }
+
+    private boolean enableSubCam() {
+        return hasSubCam && !sIsFront && sIsEnableSubCam;
+    }
 
     /**
      * Returns the information about a particular camera.
@@ -358,7 +441,25 @@ public class Camera {
      * @see android.app.admin.DevicePolicyManager#getCameraDisabled(android.content.ComponentName)
      */
     public static Camera open(int cameraId) {
-        return new Camera(cameraId);
+        setCameraIndex();
+        if (cameraId == sIndexOfSub || cameraId == sIndexOfIspFront) {
+            throw new RuntimeException("open wrong cameraId");
+        }
+        cameraId = checkIspCamera(cameraId);
+        int i2 = 1;
+        while (i2 <= 5) {
+            try {
+                return new Camera(cameraId);
+            } catch (RuntimeException e) {
+                SystemClock.sleep(300);
+                if (i2 == 5) {
+                    Log.i(DTAG, "fail");
+                    throw new RuntimeException("Fail to connect to camera service");
+                }
+                i2++;
+            }
+        }
+        return null;
     }
 
     /**
@@ -474,14 +575,21 @@ public class Camera {
         mCameraDataCallback = null;
         mCameraMetaDataCallback = null;
         /* ### QC ADD-ONS: END */
+        /* ### HTC ADD-ONS: START */
+        mHtcCallback = null;
+        mCameraId = cameraId;
+        /* ### HTC ADD-ONS: END */
 
-        Looper looper;
-        if ((looper = Looper.myLooper()) != null) {
-            mEventHandler = new EventHandler(this, looper);
-        } else if ((looper = Looper.getMainLooper()) != null) {
-            mEventHandler = new EventHandler(this, looper);
+        Looper myLooper = Looper.myLooper();
+        if (myLooper != null) {
+            setEventHandler(mCameraId, myLooper);
         } else {
-            mEventHandler = null;
+            myLooper = Looper.getMainLooper();
+            if (myLooper != null) {
+                setEventHandler(mCameraId, myLooper);
+            } else {
+                mEventHandler = null;
+            }
         }
 
         String packageName = ActivityThread.currentOpPackageName();
@@ -496,6 +604,16 @@ public class Camera {
                     halVersion = CAMERA_HAL_API_VERSION_1_0;
                     break;
                 }
+            }
+        }
+        if (hasSubCam) {
+            if (mCameraId == sIndexOfMain) {
+                setState(true, sIsFront);
+                sMainCam = this;
+            }
+            if (mCameraId == sIndexOfFront || mCameraId == sIndexOfIspFront) {
+                setState(sIsMain, true);
+                processSubCam(false);
             }
         }
         return native_setup(new WeakReference<Camera>(this), cameraId, halVersion, packageName);
@@ -554,6 +672,16 @@ public class Camera {
         return new Camera();
     }
 
+    public static int getNumberOfCameras() {
+        int _getNumberOfCameras = _getNumberOfCameras();
+        return (_getNumberOfCameras == 3 || _getNumberOfCameras == 4) ? 2 : _getNumberOfCameras;
+    }
+
+    public static Camera open_subCame_ssdTool(Context context) {
+        setCameraIndex();
+        return (hasSubCam && context.getPackageName().compareTo("com.htc.android.ssdtest") == 0) ? new Camera(sIndexOfSub) : null;
+    }
+
     /**
      * An empty Camera for testing purpose.
      */
@@ -577,8 +705,26 @@ public class Camera {
      * <p>You must call this as soon as you're done with the Camera object.</p>
      */
     public final void release() {
+        if (hasSubCam && !mIsReleased) {
+        if (mCameraId == sIndexOfMain && sMainCam == this) {
+            setState(false, sIsFront);
+            releaseStaticSubCam();
+            mIsSubCamPreviewing = false;
+            mIsSubCamTakePic = false;
+            sMainCam = null;
+            sMainLooper = null;
+        } else if (mCameraId == sIndexOfFront) {
+            setState(sIsMain, false);
+        }
+        mIsReleased = true;
+    }
+        mIsMainCamPreviewing = false;
         native_release();
         mFaceDetectionRunning = false;
+        if (mVteEnable) {
+            notifyVTE(false);
+        }
+
     }
 
     /**
@@ -615,6 +761,38 @@ public class Camera {
      *     example, if the camera is still in use by another process).
      */
     public native final void lock();
+
+    // TODO remove
+    public final void notifyVTE(final boolean z) {
+        new Thread(new Runnable() {
+            public void run() {
+                boolean z = false;
+                Log.i("VTE", "Start thread to notify VTE");
+                try {
+                    z = AppGlobals.getPackageManager().hasSystemFeature("com.htc.vte");
+                    Log.i(Camera.TAG, "hasFeature com.htc.vte" + z);
+                } catch (RemoteException e) {
+                    Log.i(Camera.TAG, "Unable to check support VTE");
+                }
+                if (z && mCameraId == 1) {
+                    int myPid = /*Process.myPid()*/ -1;
+                    Log.i("VTE", "notify VTE to " + z + " for cameraId = " + mCameraId + ", in pid = " + myPid);
+                    Application application = ActivityThread.currentActivityThread().getApplication();
+                    String currentPackageName = ActivityThread.currentPackageName();
+                    try {
+                        Intent intent = z ? new Intent("com.htc.camera.CameraStatusON") : new Intent("com.htc.camera.CameraStatusOFF");
+                        intent.putExtra("CameraInfo", mCameraId);
+                        intent.putExtra("IM_APP", currentPackageName);
+                        intent.putExtra("IM_PID", myPid);
+                        intent.setPackage("com.htc.vte");
+                        application.startService(intent);
+                    } catch (Exception e2) {
+                    }
+                    mVteEnable = z;
+                }
+            }
+        }).start();
+    }
 
     /**
      * Reconnects to the camera service after another process used it.
@@ -757,15 +935,31 @@ public class Camera {
      * called, {@link Camera.PreviewCallback#onPreviewFrame(byte[], Camera)}
      * will be called when preview data becomes available.
      */
-    public native final void startPreview();
+    public native final void _startPreview();
+
+    public final void startPreview() {
+        mIsMainCamPreviewing = true;
+        _startPreview();
+        if (hasSubCam && !mIsSubCamChecked && mCameraId == sIndexOfMain) {
+            processSubCam(true);
+            setParametersSubCam(mParamsForSubFirstPreview);
+            mParamsForSubFirstPreview = null;
+        }
+        startPreviewSubCam();
+        notifyVTE(true);
+    }
 
     /**
      * Stops capturing and drawing preview frames to the surface, and
      * resets the camera for a future call to {@link #startPreview()}.
      */
     public final void stopPreview() {
+        mIsMainCamPreviewing = false;
         _stopPreview();
         mFaceDetectionRunning = false;
+
+        stopPreviewSubCam();
+        notifyVTE(false);
 
         mShutterCallback = null;
         mRawImageCallback = null;
@@ -1101,7 +1295,75 @@ public class Camera {
          setPreviewCallbackSurface(previewSurface);
     }
 
+    private void setParametersByHTC(String str, String str2) {
+        if (!TextUtils.isEmpty(str2)) {
+            getSubCamParameter().set(str, str2);
+        }
+    }
+
+    private void setParametersSubCam(Parameters parameters) {
+        if (hasSubCam && sSubCam != null) {
+            getSubCamParameter().setPictureSize(1280, 720);
+            getSubCamParameter().setPreviewSize(DisplayMetrics.DENSITY_XXXHIGH, DisplayMetrics.DENSITY_360);
+            getSubCamParameter().set("no-display-mode", WifiEnterpriseConfig.ENGINE_ENABLE);
+            if (parameters != null) {
+                setParametersByHTC("capture-mode", parameters.get("capture-mode"));
+                setParametersByHTC("video-size", parameters.get("video-size"));
+                setParametersByHTC("front-camera-mode", parameters.get("front-camera-mode"));
+                setParametersByHTC("force-use-audio-enabled", parameters.get("force-use-audio-enabled"));
+                setParametersByHTC("cam-mode", parameters.get("cam-mode"));
+                setParametersByHTC("hdr-supported", parameters.get("hdr-supported"));
+                setParametersByHTC("video-720p60fps-supported", parameters.get("video-720p60fps-supported"));
+                setParametersByHTC("video-slow-motion-supported", parameters.get("video-slow-motion-supported"));
+                setParametersByHTC("video-hdr", parameters.get("video-hdr"));
+                setParametersByHTC("ois_support", parameters.get("ois_support"));
+                setParametersByHTC("video-slow-motion-supported", parameters.get("video-slow-motion-supported"));
+                setParametersByHTC("video-stabilization-supported", parameters.get("video-stabilization-supported"));
+                setParametersByHTC("video-stabilization", parameters.get("video-stabilization"));
+                setParametersByHTC("sound-off", parameters.get("sound-off"));
+                setParametersByHTC("antibanding", parameters.get("antibanding"));
+                setParametersByHTC("front-camera-mode", parameters.get("front-camera-mode"));
+                setParametersByHTC("recording-hint", parameters.get("recording-hint"));
+                setParametersByHTC("cache-first-frame", parameters.get("cache-first-frame"));
+                setParametersByHTC("time-cons-post-processing", parameters.get("time-cons-post-processing"));
+            }
+            sSubCam.native_setParameters(getSubCamParameter().flatten());
+        }
+    }
+
     private native final void setPreviewCallbackSurface(Surface s);
+
+    private void setState(boolean z, boolean z2) {
+        if (hasSubCam) {
+            sIsMain = z;
+            sIsFront = z2;
+        }
+    }
+
+    private void startPreviewSubCam() {
+        if (hasSubCam && sSubCam != null && mEnableSubPreview && mIsMainCamPreviewing) {
+            mIsSubCamPreviewing = true;
+            sSubCam._startPreview();
+        }
+    }
+
+    private void stopPreviewSubCam() {
+        if (hasSubCam && sSubCam != null && mEnableSubPreview && mIsSubCamPreviewing) {
+            mIsSubCamPreviewing = false;
+            sSubCam._stopPreview();
+        }
+    }
+
+    private void takePictureSubCam() {
+        if (hasSubCam && sSubCam != null && enableDepthMode()) {
+            mIsSubCamTakePic = true;
+            int i = 0;
+            if (mJpegCallback != null) {
+                i = 0 | CAMERA_MSG_COMPRESSED_IMAGE;
+            }
+            sSubCam.native_takePicture(i);
+        }
+    }
 
     private class EventHandler extends Handler
     {
@@ -1128,10 +1390,29 @@ public class Camera {
                 return;
 
             case CAMERA_MSG_COMPRESSED_IMAGE:
-                if (mJpegCallback != null) {
-                    mJpegCallback.onPictureTaken((byte[])msg.obj, mCamera);
+                if (hasSubCam) {
+                    if (sSubCam == null || !(sMainCam == null || sMainCam.mIsSubCamTakePic)) {
+                        sendJpgCallback((byte[]) msg.obj, mCamera);
+                        return;
+                    }
+                    if (mCamera != null && mCamera.mJpg == null) {
+                        mCamera.mJpg = (byte[]) msg.obj;
+                    }
+                    if (sSubCam != null && sMainCam != null && sMainCam.mJpg != null && sSubCam.mJpg != null) {
+                        sMainCam.mConcateJpg = new byte[(sMainCam.mJpg.length + sSubCam.mJpg.length)];
+                        sMainCam.mIsSubCamTakePic = false;
+                        System.arraycopy(sMainCam.mJpg, 0, sMainCam.mConcateJpg, 0, sMainCam.mJpg.length);
+                        System.arraycopy(sSubCam.mJpg, 0, sMainCam.mConcateJpg, sMainCam.mJpg.length, sSubCam.mJpg.length);
+                        sendJpgCallback(sMainCam.mConcateJpg, sMainCam);
+                        return;
+                    }
+                    return;
+                } else if (mJpegCallback != null) {
+                    mJpegCallback.onPictureTaken((byte[]) msg.obj, mCamera);
+                    return;
+                } else {
+                    return;
                 }
-                return;
 
             case CAMERA_MSG_PREVIEW_FRAME:
                 PreviewCallback pCb = mPreviewCallback;
@@ -1209,10 +1490,45 @@ public class Camera {
                 }
                 return;
             /* ### QC ADD-ONS: END */
+            /* ### HTC ADD-ONS: START */
+            case CAMERA_MSG_OT_METADATA:
+                if (mOtListener != null) {
+                    mOtListener.onOtDetection((Ot[]) msg.obj, mCamera);
+                    return;
+                }
+                return;
             default:
+                if ((msg.what & CAMERA_MSG_HTC_CALLBACK) != 0) {
+                    Log.d(Camera.TAG, "HTC_CALLBACK: callbackType=" + (msg.what & Camera.MASK_HTC_CALLBACK) + " arg1=" + msg.arg1 + " arg2=" + msg.arg2 + " mHtcCallback=" + mHtcCallback);
+                    switch (msg.what & Camera.MASK_HTC_CALLBACK) {
+                    case HTC_CALLBACK_CAPTURE_RESULT:
+                        Log.d(Camera.TAG, "CALLBACK_CAPTURE_RESULT");
+                        CameraCharacteristics cameraCharacteristics = new CameraCharacteristics(new CameraMetadataNative(mMetadata));
+                        CaptureResult captureResult = new CaptureResult(new CameraMetadataNative(mMetadata), new Builder(new CameraMetadataNative(mMetadata), false, -1).build(), new CaptureResultExtras(-1, -1, -1, -1, -1, -1));
+                        if (mHtcCallback != null) {
+                            mHtcCallback.onCaptureResult(cameraCharacteristics, captureResult, mCamera);
+                        }
+                        if (mHtcHDKCallback != null && (mHtcHDKCallback instanceof HtcCallback)) {
+                            ((HtcCallback) mHtcHDKCallback).onCaptureResult(cameraCharacteristics, captureResult, mCamera);
+                            return;
+                        }
+                        return;
+                    default:
+                        if (mHtcCallback != null) {
+                            mHtcCallback.OnReceive(msg.what & Camera.MASK_HTC_CALLBACK, msg.arg1, msg.arg2, mCamera);
+                        }
+                        if (mHtcHDKCallback != null && (mHtcHDKCallback instanceof HtcCallback)) {
+                            ((HtcCallback) mHtcHDKCallback).OnReceive(msg.what & Camera.MASK_HTC_CALLBACK, msg.arg1, msg.arg2, mCamera);
+                            return;
+                        }
+                        return;
+                    }
+                }
+
                 Log.e(TAG, "Unknown message type " + msg.what);
                 return;
             }
+            /* ### HTC ADD-ONS: START */
         }
     }
 
@@ -1226,6 +1542,81 @@ public class Camera {
         if (c.mEventHandler != null) {
             Message m = c.mEventHandler.obtainMessage(what, arg1, arg2, obj);
             c.mEventHandler.sendMessage(m);
+        }
+    }
+
+    private void processSubCam(boolean z) {
+        if (hasSubCam && !this.mIsSubCamChecked) {
+            if (z && enableSubCam() && sSubCam == null) {
+                sSubCam = new Camera(sIndexOfSub);
+            }
+            if (!(z || sSubCam == null)) {
+                releaseStaticSubCam();
+            }
+            mIsSubCamChecked = true;
+        }
+    }
+
+    private static void releaseStaticSubCam() {
+        if (hasSubCam && sSubCam != null) {
+            sSubCam.native_release();
+            sSubCam.mIsReleased = true;
+            sSubCam = null;
+            sSubCamParam = null;
+        }
+    }
+
+    private void sendJpgCallback(byte[] bArr, Camera camera) {
+        if (sMainCam != null) {
+            sMainCam.mJpg = null;
+            sMainCam.mConcateJpg = null;
+        }
+        if (sSubCam != null) {
+            sSubCam.mJpg = null;
+            sSubCam.mConcateJpg = null;
+        }
+        if (camera != null && camera.mJpegCallback != null) {
+            camera.mJpegCallback.onPictureTaken(bArr, camera);
+        }
+    }
+
+    private static void setCameraIndex() {
+        if (_getNumberOfCameras() == 3 && !isDisableSubCamByTest()) {
+            hasSubCam = true;
+            hasIspFrontCam = false;
+        } else if (_getNumberOfCameras() != 4 || isDisableSubCamByTest()) {
+            hasSubCam = false;
+            hasIspFrontCam = false;
+        } else {
+            hasSubCam = true;
+            hasIspFrontCam = true;
+        }
+        sIndexOfMain = 0;
+        sIndexOfFront = 1;
+        sIndexOfSub = 2;
+        sIndexOfIspFront = 3;
+    }
+
+    private void setEnableSubPreview(Parameters parameters) {
+        if (hasSubCam && parameters != null) {
+            if (mCameraId == sIndexOfFront || isRecordingMode(parameters.get("recording-hint")) || isZoeMode(parameters.get("capture-mode")) || !isEnableSubCam(parameters)) {
+                mEnableSubPreview = false;
+            } else {
+                mEnableSubPreview = true;
+            }
+        }
+    }
+
+    private void setEventHandler(int i, Looper looper) {
+        if (i == sIndexOfMain) {
+            sMainLooper = looper;
+        }
+        if (i == sIndexOfSub && sMainLooper != null) {
+            mEventHandler = new EventHandler(this, sMainLooper);
+        } else if (i == sIndexOfMain || i == sIndexOfFront) {
+            mEventHandler = new EventHandler(this, looper);
+        } else {
+            mEventHandler = new EventHandler(this, looper);
         }
     }
 
@@ -1481,6 +1872,12 @@ public class Camera {
         }
         if (mRawImageCallback != null) {
             msgType |= CAMERA_MSG_RAW_IMAGE;
+            mMetadata = new CameraMetadataNative();
+            if (mMetadata != null) {
+                mMetadataPtr = mMetadata.getNativeCameraMetadata();
+            } else {
+                mMetadataPtr = 0;
+            }
         }
         if (mPostviewCallback != null) {
             msgType |= CAMERA_MSG_POSTVIEW_FRAME;
@@ -1686,6 +2083,15 @@ public class Camera {
         mZoomListener = listener;
     }
 
+    public static class Ot {
+        public int id = -1;
+        public Rect rect;
+    }
+
+    public interface OtDetectionListener {
+        void onOtDetection(Ot[] otArr, Camera camera);
+    }
+
     /**
      * Callback interface for face detected in the preview frame.
      *
@@ -1702,6 +2108,12 @@ public class Camera {
          * @param camera  The {@link Camera} service object
          */
         void onFaceDetection(Face[] faces, Camera camera);
+    }
+
+    public interface HtcCallback {
+        void OnReceive(int i, int i2, int i3, Camera camera);
+
+        void onCaptureResult(CameraCharacteristics cameraCharacteristics, CaptureResult captureResult, Camera camera);
     }
 
     /**
@@ -1965,6 +2377,11 @@ public class Camera {
         }
 
         native_setParameters(params.flatten());
+        setEnableSubPreview(params);
+        if (hasSubCam && !mIsSubCamChecked) {
+            mParamsForSubFirstPreview = params;
+        }
+        setParametersSubCam(params);
     }
 
     /**
@@ -2096,6 +2513,18 @@ public class Camera {
     }
     private native final void native_sendMetaData();
 
+    public final void setHtcCallback(HtcCallback htcCallback) {
+        mHtcCallback = htcCallback;
+    }
+
+    public final void setHtcHDKCallback(Object obj) {
+        mHtcHDKCallback = obj;
+    }
+
+    public final void setOtDetectionListener(OtDetectionListener otDetectionListener) {
+        mOtListener = otDetectionListener;
+    }
+
     /** @hide
      * Configure longshot mode. Available only in ZSL.
      *
@@ -2193,6 +2622,38 @@ public class Camera {
         p.copyFrom(parameters);
 
         return p;
+    }
+
+    private Parameters getSubCamParameter() {
+        if (hasSubCam && sSubCam != null && sSubCamParam == null) {
+            sSubCamParam = sSubCam.getParameters();
+        }
+        return sSubCamParam;
+    }
+
+    private static boolean isDisableSubCamByTest() {
+        return false;
+    }
+
+
+    private boolean isEnableSubCam(Parameters parameters) {
+        String str = parameters.get("enable-dual-lens");
+        if (TextUtils.isEmpty(str)) {
+            sIsEnableSubCam = true;
+        } else if (str.equals("true")) {
+            sIsEnableSubCam = true;
+        } else {
+            sIsEnableSubCam = false;
+        }
+        return sIsEnableSubCam;
+    }
+
+    private boolean isRecordingMode(String str) {
+        return !TextUtils.isEmpty(str) && str.equals("true");
+    }
+
+    private boolean isZoeMode(String str) {
+        return !TextUtils.isEmpty(str) && str.equals("zoe");
     }
 
     /**
@@ -2758,7 +3219,7 @@ public class Camera {
             if (this == other) {
                 return true;
             }
-            return other != null && Parameters.this.mMap.equals(other.mMap);
+            return other != null && mMap.equals(other.mMap);
         }
 
         /**
@@ -3439,6 +3900,11 @@ public class Camera {
             if (rotation == 0 || rotation == 90 || rotation == 180
                     || rotation == 270) {
                 set(KEY_ROTATION, Integer.toString(rotation));
+                if (hasSubCam && sSubCam != null) {
+                    getSubCamParameter().set(KEY_ROTATION, Integer.toString(rotation));
+                    return;
+                }
+                return;
             } else {
                 throw new IllegalArgumentException(
                         "Invalid rotation=" + rotation);
