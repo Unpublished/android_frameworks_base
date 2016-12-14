@@ -4628,7 +4628,8 @@ public class PackageManagerService extends IPackageManager.Stub {
                 // version of the new path against what we have stored to determine
                 // what to do.
                 if (DEBUG_INSTALL) Slog.d(TAG, "Path changing from " + ps.codePath);
-                if (pkg.mVersionCode <= ps.versionCode) {
+                // TODO parse scanfile if its a split apk
+                if (pkg.mVersionCode < ps.versionCode) {
                     // The system package has been updated and the code path does not match
                     // Ignore entry. Skip it.
                     Slog.i(TAG, "Package " + ps.name + " at " + scanFile
@@ -4715,7 +4716,8 @@ public class PackageManagerService extends IPackageManager.Stub {
                  * already installed version, hide it. It will be scanned later
                  * and re-added like an update.
                  */
-                if (pkg.mVersionCode <= ps.versionCode) {
+                // TODO parse scanfile if its a split apk
+                if (pkg.mVersionCode < ps.versionCode) {
                     shouldHideSystemApp = true;
                     logCriticalInfo(Log.INFO, "Package " + ps.name + " appeared at " + scanFile
                             + " but new version " + pkg.mVersionCode + " better than installed "
