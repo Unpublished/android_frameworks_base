@@ -504,6 +504,7 @@ public class BatteryMeterView extends View implements DemoMode,
                 mTextGravity = a.getInt(0, Gravity.CENTER);
                 xferMode = PorterDuff.intToMode(a.getInt(1,
                         PorterDuff.modeToInt(PorterDuff.Mode.XOR)));
+                a.recycle();
             } else {
                 mTextGravity = Gravity.CENTER;
             }
@@ -516,7 +517,7 @@ public class BatteryMeterView extends View implements DemoMode,
             mTextAndBoltPaint.setXfermode(new PorterDuffXfermode(xferMode));
             mTextAndBoltPaint.setColor(mCurrentFillColor != 0
                     ? mCurrentFillColor
-                    : res.getColor(R.color.batterymeter_bolt_color));
+                    : getContext().getColor(R.color.batterymeter_bolt_color));
 
             mWarningTextPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
             mWarningTextPaint.setColor(mColors[1]);
@@ -572,7 +573,7 @@ public class BatteryMeterView extends View implements DemoMode,
             final int resId = getBatteryDrawableResourceForMode(mode);
             final Drawable batteryDrawable;
             try {
-                batteryDrawable = res.getDrawable(resId);
+                batteryDrawable = getContext().getDrawable(resId);
             } catch (Resources.NotFoundException e) {
                 throw new BatteryMeterDrawableException(res.getResourceName(resId) + " is an " +
                         "invalid drawable", e);
@@ -634,11 +635,11 @@ public class BatteryMeterView extends View implements DemoMode,
             }
 
             int drawableResId = getBatteryDrawableResourceForMode(mode);
-            mBatteryDrawable = (LayerDrawable) res.getDrawable(drawableResId);
+            mBatteryDrawable = (LayerDrawable) getContext().getDrawable(drawableResId);
             mFrameDrawable = mBatteryDrawable.findDrawableByLayerId(R.id.battery_frame);
             mFrameDrawable.setTint(mCurrentBackgroundColor != 0
                     ? mCurrentBackgroundColor
-                    : res.getColor(R.color.batterymeter_frame_color));
+                    : getContext().getColor(R.color.batterymeter_frame_color));
             // set the animated vector drawable we will be stop animating
             Drawable levelDrawable = mBatteryDrawable.findDrawableByLayerId(R.id.battery_fill);
             mLevelDrawable = new StopMotionVectorDrawable(levelDrawable);
