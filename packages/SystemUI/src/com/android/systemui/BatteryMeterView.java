@@ -375,9 +375,11 @@ public class BatteryMeterView extends View implements DemoMode,
     }
 
     public int getColorForLevel(int percent) {
+        int normalLevel = mColors.length - 4;
+        if (normalLevel < 0) normalLevel = mColors.length - 2;
         // If we are in power save mode, always use the normal color.
         if (mPowerSaveEnabled) {
-            return mColors[mColors.length-1];
+            return mColors[normalLevel + 1];
         }
         int thresh, color = 0;
         for (int i=0; i<mColors.length; i+=2) {
@@ -386,7 +388,7 @@ public class BatteryMeterView extends View implements DemoMode,
             if (percent <= thresh) {
 
                 // Respect tinting for "normal" level
-                if (i == mColors.length-2) {
+                if (i == normalLevel) {
                     return mIconTint;
                 } else {
                     return color;
