@@ -16,6 +16,8 @@
 
 package com.android.server;
 
+import android.app.Notification;
+import android.app.NotificationManager;
 import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
@@ -93,7 +95,7 @@ public class BootReceiver extends BroadcastReceiver {
         Downloads.removeAllDownloadsByPackage(context, OLD_UPDATER_PACKAGE, OLD_UPDATER_CLASS);
     }
 
-    private void logBootEvents(Context ctx) throws IOException {
+    private void logBootEvents(final Context ctx) throws IOException {
         final DropBoxManager db = (DropBoxManager) ctx.getSystemService(Context.DROPBOX_SERVICE);
         final SharedPreferences prefs = ctx.getSharedPreferences("log_files", Context.MODE_PRIVATE);
         final String headers = new StringBuilder(512)
@@ -169,6 +171,13 @@ public class BootReceiver extends BroadcastReceiver {
                     File file = new File(TOMBSTONE_DIR, path);
                     if (file.isFile()) {
                         addFileToDropBox(db, prefs, headers, file.getPath(), LOG_SIZE, "SYSTEM_TOMBSTONE");
+                        NotificationManager notificationManager = (NotificationManager) ctx.getSystemService(Context.NOTIFICATION_SERVICE);
+
+                        Notification notification = new Notification.Builder(ctx)
+                                .setContentTitle("TOMBSTONE")
+                                .setContentText("New TOMBSTONE added")
+                                .setSmallIcon(android.R.drawable.stat_sys_warning).build();
+                        notificationManager.notify(12345, notification);
                     }
                 } catch (IOException e) {
                     Slog.e(TAG, "Can't log tombstone", e);
