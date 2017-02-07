@@ -435,12 +435,15 @@ final class VoiceInteractionSessionConnection implements ServiceConnection {
                 } catch (RemoteException e) {
                 }
             }
-            mContext.unbindService(this);
             try {
+                mContext.unbindService(this);
                 mIWindowManager.removeWindowToken(mToken);
-            } catch (RemoteException e) {
-                Slog.w(TAG, "Failed removing window token", e);
+            } catch (IllegalArgumentException e) {
+                Slog.w(TAG, "Failed unbinding service", e);
             }
+            catch (RemoteException e) {
+                Slog.w(TAG, "Failed removing window token", e);
+        }
             mBound = false;
             mService = null;
             mSession = null;
