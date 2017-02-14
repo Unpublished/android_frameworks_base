@@ -80,6 +80,8 @@ public class UsbDeviceManager {
     private static final String TAG = "UsbDeviceManager";
     private static final boolean DEBUG = false;
 
+    private static final String EXTRA_FRAGMENT_ARG_KEY = ":settings:fragment_args_key";
+    private static final String ENABLE_ADB = "enable_adb";
     /**
      * The persistent property which stores whether adb is enabled or not.
      * May also contain vendor-specific default functions for testing purposes.
@@ -867,6 +869,8 @@ public class UsbDeviceManager {
                     Intent intent = Intent.makeRestartActivityTask(
                             new ComponentName("com.android.settings",
                                     "com.android.settings.DevelopmentSettings"));
+
+                    intent.putExtra(EXTRA_FRAGMENT_ARG_KEY, ENABLE_ADB);
                     PendingIntent pi = PendingIntent.getActivityAsUser(mContext, 0,
                             intent, 0, null, UserHandle.CURRENT);
 
