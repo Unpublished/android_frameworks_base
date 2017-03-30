@@ -291,6 +291,8 @@ public class PackageManagerService extends IPackageManager.Stub {
     private static final boolean DEBUG_ABI_SELECTION = false;
     private static final boolean DEBUG_PREBUNDLED_SCAN = false;
 
+    private static final boolean RESET_ALL_PACKAGE_SIGNATURES_ON_BOOT = true;
+
     private static final int RADIO_UID = Process.PHONE_UID;
     private static final int LOG_UID = Process.LOG_UID;
     private static final int NFC_UID = Process.NFC_UID;
@@ -459,6 +461,8 @@ public class PackageManagerService extends IPackageManager.Stub {
     boolean mRestoredSettings;
 
     private Resources mCustomResources;
+
+    private boolean mResetSignatures;
 
     // System configuration read by SystemConfig.
     final int[] mGlobalGids;
@@ -1663,6 +1667,8 @@ public class PackageManagerService extends IPackageManager.Stub {
                 mBootThemeConfig = ThemeUtils.getBootThemeDirty();
             }
 
+            mResetSignatures = RESET_ALL_PACKAGE_SIGNATURES_ON_BOOT;
+
             // Collect vendor overlay packages.
             // (Do this before scanning any apps.)
             // For security and version matching reason, only consider
@@ -1860,6 +1866,8 @@ public class PackageManagerService extends IPackageManager.Stub {
                     }
                 }
             }
+
+            mResetSignatures = false;
 
             // Now that we know all of the shared libraries, update all clients to have
             // the correct library paths.
@@ -5873,7 +5881,13 @@ public class PackageManagerService extends IPackageManager.Stub {
 
             pkg.applicationInfo.uid = pkgSetting.appId;
             pkg.mExtras = pkgSetting;
-            if (!pkgSetting.keySetData.isUsingUpgradeKeySets() || pkgSetting.sharedUser != null) {
+            if (mResetSignatures) {
+                Slog.d(TAG, "resetting signatures on package " + pkg.packageName);
+                pkgSetting.signatures.mSignatures = pkg.mSignatures;
+                if (pkgSetting.sharedUser != null) {
+                    pkgSetting.sharedUser.signatures.mSignatures = pkg.mSignatures;
+                }
+            } else if (!pkgSetting.keySetData.isUsingUpgradeKeySets() || pkgSetting.sharedUser != null) {
                 try {
                     verifySignaturesLP(pkgSetting, pkg);
                     // We just determined the app is signed correctly, so bring
