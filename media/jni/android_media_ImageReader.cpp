@@ -173,6 +173,7 @@ BufferItem* JNIImageReaderContext::getBufferItem() {
 }
 
 void JNIImageReaderContext::returnBufferItem(BufferItem* buffer) {
+    buffer->mGraphicBuffer = nullptr;
     mBuffers.push_back(buffer);
 }
 
