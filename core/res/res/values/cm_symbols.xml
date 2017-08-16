@@ -87,9 +87,7 @@
 
     <!-- app opps always-ask -->
     <java-symbol type="id" name="permission_text" />
-    <java-symbol type="id" name="permission_remember_layout" />
     <java-symbol type="id" name="permission_remember_choice_checkbox" />
-    <java-symbol type="id" name="permission_remember_choice_text" />
     <java-symbol type="string" name="allow" />
     <java-symbol type="string" name="deny" />
     <java-symbol type="layout" name="permission_confirmation_dialog" />
