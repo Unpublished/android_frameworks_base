@@ -109,7 +109,7 @@ public class TwilightCalculator {
 
         float hourAngle = (float) (Math.acos(cosHourAngle) / (2 * Math.PI));
 
-        mSunset = Math.round((solarTransitJ2000 + hourAngle) * DateUtils.DAY_IN_MILLIS) + UTC_2000;
+        mSunset = Math.round((solarTransitJ2000 + hourAngle) * DateUtils.DAY_IN_MILLIS) + UTC_2000 + DateUtils.HOUR_IN_MILLIS;
         mSunrise = Math.round((solarTransitJ2000 - hourAngle) * DateUtils.DAY_IN_MILLIS) + UTC_2000;
 
         if (mSunrise < time && mSunset > time) {
