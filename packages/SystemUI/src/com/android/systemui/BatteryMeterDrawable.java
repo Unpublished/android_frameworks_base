@@ -279,10 +279,11 @@ public class BatteryMeterDrawable extends Drawable implements
     }
 
     private int getColorForLevel(int percent) {
-
+        int normalLevel = mColors.length - 4;
+        if (normalLevel < 0) normalLevel = mColors.length - 2;
         // If we are in power save mode, always use the normal color.
         if (mPowerSaveEnabled) {
-            return mColors[mColors.length - 1];
+            return mColors[normalLevel + 1];
         }
         int thresh = 0;
         int color = 0;
@@ -292,7 +293,7 @@ public class BatteryMeterDrawable extends Drawable implements
             if (percent <= thresh) {
 
                 // Respect tinting for "normal" level
-                if (i == mColors.length - 2) {
+                if (i == normalLevel) {
                     return mIconTint;
                 } else {
                     return color;
