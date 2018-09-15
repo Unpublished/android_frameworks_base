@@ -104,7 +104,7 @@ public class WeatherControllerImpl implements WeatherController {
             if(DEBUG) Log.e(TAG, "cursor was null for temperature, forcing weather update");
             //LockClock keeps track of the user settings (temp unit, search by geo location/city)
             //so we delegate the responsibility of handling a weather update to LockClock
-            mContext.sendBroadcast(new Intent(ACTION_FORCE_WEATHER_UPDATE));
+            mContext.sendBroadcast(new Intent(ACTION_FORCE_WEATHER_UPDATE), "cyanogenmod.permission.READ_WEATHER");
         } else {
             try {
                 c.moveToFirst();
